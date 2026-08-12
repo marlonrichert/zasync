@@ -1,8 +1,8 @@
-# z-async
+# zasync
 
 A minimal, correct async framework for [Zsh Line Editor (ZLE)](https://zsh.sourceforge.io/Doc/Release/Zsh-Line-Editor.html).
 
-`z-async` is an autoloadable functin that lets you run a shell command in the background and get notified via a ZLE widget when the output is ready — no subshells, no polling, no stale results.
+`zasync` is an autoloadable function that lets you run a shell command in the background and get notified via a ZLE widget when the output is ready — no subshells, no polling, no stale results.
 
 ## Features
 
@@ -33,7 +33,7 @@ A minimal, correct async framework for [Zsh Line Editor (ZLE)](https://zsh.sourc
 |---|---|
 | `slot` | A name that uniquely identifies this background job. Starting a new job with the same slot cancels the previous one. |
 | `worker` | A command or function to run asynchronously. Its stdout is captured and stored. |
-| `cb` | The name of a ZLE widget to invoke when the worker finishes. Inside the widget, call `z-async reply <slot>` to retrieve the output. |
+| `cb` | The name of a ZLE widget to invoke when the worker finishes. Inside the widget, call `zasync reply <slot>` to retrieve the output. |
 
 
 ### Example
@@ -47,25 +47,25 @@ _my_worker() {
 # Define a ZLE widget to receive the result
 _my_callback() {
   local branch
-  branch=$(z-async reply git-branch)
+  branch=$(zasync reply git-branch)
   # update your prompt, etc.
   zle reset-prompt
 }
 zle -N _my_callback
 
-# Source z-async, then kick off the first job
-z-async start git-branch _my_worker _my_callback
+# Source zasync, then kick off the first job
+zasync start git-branch _my_worker _my_callback
 
 # Re-trigger on every prompt
 precmd() {
-  z-async start git-branch _my_worker _my_callback
+  zasync start git-branch _my_worker _my_callback
 }
 ```
 
 
 ### Global variables
 
-`z-async` stores state in associative arrays prefixed with `_zasync_`. These are internal and subject to change; do not rely on them directly — use `z-async reply` instead.
+`zasync` stores state in associative arrays prefixed with `_zasync_`. These are internal and subject to change; do not rely on them directly — use `zasync reply` instead.
 
 
 ## Author & License

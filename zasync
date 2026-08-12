@@ -18,7 +18,7 @@ zle -N .zasync.fd-callback
       return 0
       ;;
     :help)
-      print -r -- 'Usage: z-async start <slot> <worker> <cb>'
+      print -r -- 'Usage: zasync start <slot> <worker> <cb>'
       print -r -- ''
       print -r -- 'Start worker and register callback.'
       print -r -- ''
@@ -61,7 +61,7 @@ zle -N .zasync.fd-callback
       return 0
       ;;
     :help)
-      print -r -- 'Usage: z-async cancel <slot>'
+      print -r -- 'Usage: zasync cancel <slot>'
       print -r -- ''
       print -r -- 'Cancel in-flight worker for slot.'
       print -r -- ''
@@ -93,7 +93,7 @@ zle -N .zasync.fd-callback
       return 0
       ;;
     :help)
-      print -r -- 'Usage: z-async reply <slot>'
+      print -r -- 'Usage: zasync reply <slot>'
       print -r -- ''
       print -r -- 'Print last reply for slot.'
       print -r -- ''
@@ -121,13 +121,13 @@ zle -N .zasync.fd-callback
       return 0
     fi
 
-    print -u2 -r -- "z-async: unknown command: $cmd"
+    print -u2 -r -- "zasync: unknown command: $cmd"
     .zasync.help
     return 2
   fi
 
-  print -r -- 'Usage: z-async help [command]'
-  print -r -- 'Usage: z-async <command> [args]'
+  print -r -- 'Usage: zasync help [command]'
+  print -r -- 'Usage: zasync <command> [args]'
   print -r -- ''
   print -r -- 'Commands:'
   .zasync.start :help-summary
@@ -174,7 +174,7 @@ zle -N .zasync.fd-callback
   [[ -n $callback ]] && zle "$callback"
 }
 
-z-async() {
+zasync() {
   (( $# > 0 )) || {
     .zasync.help
     return 2
@@ -188,7 +188,7 @@ z-async() {
 
   local func=.zasync.$1
   if [[ ! -v "functions[$func]" ]]; then
-    print -u2 -r -- "z-async: unknown command: $1"
+    print -u2 -r -- "zasync: unknown command: $1"
     .zasync.help
     return 2
   fi
@@ -197,4 +197,4 @@ z-async() {
   "$func" "$@"
 }
 
-z-async "$@"
+zasync "$@"
