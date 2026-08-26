@@ -14,16 +14,29 @@ A minimal, correct async framework for [Zsh Line Editor (ZLE)](https://zsh.sourc
 
 ## Requirements
 
-- Zsh 5.0 or later (uses `sysopen` and `zle -Fw`)
+- Zsh (uses `sysopen` and `zle -Fw`)
 
+
+## Installation
+
+`zasync` is an autoloadable function. Add its directory to `fpath` and
+autoload it:
+
+```zsh
+fpath+=(/path/to/zasync)
+autoload -Uz zasync
+```
+
+
+## Usage
 
 ### Commands
 
 | Command | Description |
 |---|---|
-| `start <slot> <worker> <cb>` | Run `<worker>` asynchronously; call ZLE widget `<cb>` when done. |
+| `start <slot> <worker> <cb>` | Run `<worker>` asynchronously; call ZLE widget `<cb>` when done. Worker stderr is discarded; wrap your worker function if you need it elsewhere. |
 | `cancel <slot>` | Cancel any in-flight job for `<slot>`. |
-| `reply <slot>` | Print the most recent output received for `<slot>`. |
+| `reply <slot>` | Print the most recent output received for `<slot>`. Empty before the first delivery or after `cancel`. |
 | `help [command]` | Show help for all commands or a single `<command>`. |
 
 
@@ -32,7 +45,7 @@ A minimal, correct async framework for [Zsh Line Editor (ZLE)](https://zsh.sourc
 | Parameter | Description |
 |---|---|
 | `slot` | A name that uniquely identifies this background job. Starting a new job with the same slot cancels the previous one. |
-| `worker` | A command or function to run asynchronously. Its stdout is captured and stored. |
+| `worker` | The name of a command or function to run asynchronously (no arguments). Its stdout is captured and stored. |
 | `cb` | The name of a ZLE widget to invoke when the worker finishes. Inside the widget, call `zasync reply <slot>` to retrieve the output. |
 
 
@@ -41,7 +54,7 @@ A minimal, correct async framework for [Zsh Line Editor (ZLE)](https://zsh.sourc
 ```zsh
 # Define a worker function
 _my_worker() {
-  git rev-parse --abbrev-ref HEAD 2>/dev/null
+  git rev-parse --abbrev-ref HEAD
 }
 
 # Define a ZLE widget to receive the result
@@ -53,7 +66,8 @@ _my_callback() {
 }
 zle -N _my_callback
 
-# Source zasync, then kick off the first job
+# zasync is autoloadable — make it available, then kick off the first job
+autoload -Uz zasync
 zasync start git-branch _my_worker _my_callback
 
 # Re-trigger on every prompt
@@ -61,6 +75,11 @@ precmd() {
   zasync start git-branch _my_worker _my_callback
 }
 ```
+
+Since `start` cancels any previous job for the slot, and `cancel` clears its
+reply, a widget that renders `zasync reply` on every prompt will flicker to
+empty each cycle until the new result lands, rather than holding the previous
+value.
 
 
 ### Global variables
