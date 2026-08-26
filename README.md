@@ -14,7 +14,7 @@ A minimal, correct async framework for [Zsh Line Editor (ZLE)](https://zsh.sourc
 
 ## Requirements
 
-- Zsh (uses `sysopen` and `zle -Fw`)
+- Zsh 5.8 or later (needs `$sysparams[procsubstpid]`, plus `sysopen` and `zle -Fw`)
 
 
 ## Installation
@@ -26,6 +26,13 @@ autoload it:
 fpath+=(/path/to/zasync)
 autoload -Uz zasync
 ```
+
+Always install `zasync` via `fpath`/`autoload`, not by `source`-ing the file
+directly — `zasync` refuses to run and warns if sourced. Autoload keys a
+function by name, so at most one `zasync` implementation can ever be loaded at
+a time — sourcing multiple copies (e.g. bundled by different plugins) instead
+lets each redefine `zasync` and its internal `_zasync_*` state, silently
+overwriting one another.
 
 
 ## Usage

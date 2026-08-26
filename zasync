@@ -1,5 +1,10 @@
 #!/bin/zsh
 
+if [[ $0 != zasync ]]; then
+  print -u2 -r -- 'zasync: must be run as a function, not sourced'
+  return 1
+fi
+
 # sysread/sysopen don't autoload by name.
 zmodload zsh/system
 
@@ -16,214 +21,13 @@ typeset -gi _zasync_n=0         # monotonic counter
 
 typeset -ga _zasync_commands=(start cancel reply help)
 
+# Subfunctions live in Functions/ next to this file and are autoloaded by
+# absolute path, so callers don't need them on $fpath.
+local funcdir=${${(%):-%x}:A:h}/Functions
+local -a funcfiles=("$funcdir"/.zasync.*)
+autoload -Uz "${(@)funcfiles:#*.zwc}"
+
 zle -N .zasync.fd-callback
-
-.zasync.start() {
-  case ${1-} in
-    :help-summary)
-      print -r -- '  start <slot> <worker> <cb>    Start worker and register callback.'
-      return 0
-      ;;
-    :help)
-      print -r -- 'Usage: zasync start <slot> <worker> <cb>'
-      print -r -- ''
-      print -r -- 'Start worker and register callback.'
-      print -r -- ''
-      print -r -- 'Arguments:'
-      print -r -- '  slot    Name used to track/cancel this in-flight job.'
-      print -r -- '  worker  Name of a command or function to run asynchronously (no arguments).'
-      print -r -- '  cb      ZLE widget called when worker output is ready.'
-      return 0
-      ;;
-  esac
-
-  (( $# == 3 )) || {
-    .zasync.start :help
-    return 2
-  }
-
-  local slot=$1 worker=$2 callback=$3
-
-  # Cancel any previous in-flight job for this slot first.
-  .zasync.cancel "$slot"
-
-  # Process substitution never sets $!, but $sysparams[procsubstpid] gives
-  # the driver's pid directly after it starts. It runs in its own process
-  # group (pgid == pid), letting .zasync.cancel kill the whole group.
-  local fd=
-  sysopen -r -o cloexec -u fd <( "$worker" 2>/dev/null )
-
-  local seq=$(( ++_zasync_n ))
-  _zasync_fd[$slot]=$fd
-  _zasync_seq[$slot]=$seq
-  _zasync_fd_slot[$fd]=$slot
-  _zasync_fd_seq[$fd]=$seq
-  _zasync_fd_pwd[$fd]=$PWD
-  _zasync_fd_cb[$fd]=$callback
-  _zasync_fd_pid[$fd]=$sysparams[procsubstpid]
-
-  zle -Fw "$fd" .zasync.fd-callback
-}
-
-.zasync.cancel() {
-  case ${1-} in
-    :help-summary)
-      print -r -- '  cancel <slot>                 Cancel in-flight worker for slot.'
-      return 0
-      ;;
-    :help)
-      print -r -- 'Usage: zasync cancel <slot>'
-      print -r -- ''
-      print -r -- 'Cancel in-flight worker for slot.'
-      print -r -- ''
-      print -r -- 'Arguments:'
-      print -r -- '  slot    Name of the tracked slot to cancel.'
-      return 0
-      ;;
-  esac
-
-  (( $# == 1 )) || {
-    .zasync.cancel :help
-    return 2
-  }
-
-  local slot=$1
-  local fd=${_zasync_fd[$slot]-}
-  unset "_zasync_fd[$slot]"
-
-  [[ -z $fd ]] && return 0
-
-  local pid=${_zasync_fd_pid[$fd]-}
-  unset "_zasync_fd_slot[$fd]" "_zasync_fd_seq[$fd]" "_zasync_fd_pwd[$fd]" "_zasync_fd_cb[$fd]" "_zasync_fd_pid[$fd]" "_zasync_fd_buf[$fd]"
-  unset "_zasync_reply[$slot]"
-  zle -F "$fd" 2>/dev/null
-
-  # Never close fds below 10: those are stdin/stdout/stderr and other
-  # reserved descriptors we did not allocate.
-  (( fd >= 10 )) && exec {fd}<&-
-
-  # pid 0 means the diff in .zasync.start found no new child; -0 would signal
-  # our own process group, so guard against it explicitly.
-  (( pid > 0 )) && kill -- -"$pid" 2>/dev/null
-}
-
-.zasync.reply() {
-  case ${1-} in
-    :help-summary)
-      print -r -- '  reply <slot>                  Print last reply for slot.'
-      return 0
-      ;;
-    :help)
-      print -r -- 'Usage: zasync reply <slot>'
-      print -r -- ''
-      print -r -- 'Print last reply for slot.'
-      print -r -- ''
-      print -r -- 'Arguments:'
-      print -r -- '  slot    Name of the tracked slot.'
-      return 0
-      ;;
-  esac
-
-  (( $# == 1 )) || {
-    .zasync.reply :help
-    return 2
-  }
-
-  print -r -- "${_zasync_reply[$1]-}"
-}
-
-.zasync.help() {
-  case ${1-} in
-    :help-summary)
-      print -r -- '  help [command]                Show help for a command.'
-      return 0
-      ;;
-    :help)
-      print -r -- 'Usage: zasync help [command]'
-      print -r -- ''
-      print -r -- 'Show help for a command.'
-      print -r -- ''
-      print -r -- 'Arguments:'
-      print -r -- '  command    Name of the command to show help for.'
-      return 0
-      ;;
-  esac
-
-  local cmd=${1-}
-
-  if [[ -n $cmd ]]; then
-    if (( ${_zasync_commands[(Ie)$cmd]} )); then
-      .zasync.$cmd :help
-      return 0
-    fi
-
-    print -u2 -r -- "zasync: unknown command: $cmd"
-    .zasync.help
-    return 2
-  fi
-
-  print -r -- 'Usage: zasync help [command]'
-  print -r -- 'Usage: zasync <command> [args]'
-  print -r -- ''
-  print -r -- 'Commands:'
-  local c
-  for c in $_zasync_commands; do
-    .zasync.$c :help-summary
-  done
-}
-
-.zasync.fd-callback() {
-  local fd=$1
-
-  local slot=${_zasync_fd_slot[$fd]-}
-  local req_seq=${_zasync_fd_seq[$fd]-0}
-  local req_pwd=${_zasync_fd_pwd[$fd]-}
-  local callback=${_zasync_fd_cb[$fd]-}
-
-  local chunk=
-  sysread -i "$fd" chunk
-  local rc=$?
-
-  # More data may still arrive: buffer it and wait for the next wake, without
-  # unregistering or closing the fd.
-  if (( rc == 0 )); then
-    _zasync_fd_buf[$fd]+=$chunk
-    return 0
-  fi
-
-  # EOF (status 5) or an error both end the stream; either way, deliver
-  # whatever was buffered and tear down.
-  zle -F "$fd"
-
-  local data=
-  {
-    # Avoid interrupting yank/kill widget sequences.
-    if (( ${YANK_ACTIVE:-0} )); then
-      local before=
-      (( YANK_START <= CURSOR && YANK_END <= CURSOR )) && before=before
-      builtin zle -f yank$before
-    else
-      builtin zle -f kill
-    fi
-
-    data=${_zasync_fd_buf[$fd]-}
-  } always {
-    exec {fd}<&-
-    if [[ -n $slot ]]; then
-      unset "_zasync_fd_slot[$fd]" "_zasync_fd_seq[$fd]" "_zasync_fd_pwd[$fd]" "_zasync_fd_cb[$fd]" "_zasync_fd_pid[$fd]" "_zasync_fd_buf[$fd]"
-      if [[ -v _zasync_fd[$slot] && ${_zasync_fd[$slot]} == $fd ]]; then
-        unset "_zasync_fd[$slot]"
-      fi
-    fi
-  }
-
-  # Discard stale results (wrong generation or wrong directory).
-  local cur_seq=${_zasync_seq[$slot]-0}
-  (( req_seq > 0 && req_seq == cur_seq )) && [[ $req_pwd == $PWD ]] || return 0
-
-  _zasync_reply[$slot]=$data
-  [[ -n $callback ]] && zle "$callback"
-}
 
 zasync() {
   (( $# > 0 )) || {

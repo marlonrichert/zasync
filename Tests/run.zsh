@@ -9,9 +9,9 @@ setopt no_unset warn_create_global
 
 typeset -g REPO=${0:A:h:h}
 
-# Sourcing runs `zasync "$@"` at the end of the file, so pass a harmless
-# command and discard its output.
-source $REPO/zasync help >/dev/null
+fpath=($REPO $fpath)
+autoload -Uz zasync
+zasync help >/dev/null
 
 typeset -gi PASSED=0 FAILED=0 XFAILED=0 XPASSED=0
 
